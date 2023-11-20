@@ -1,0 +1,119 @@
+1) Solo se le hicieron cambios al scanner. En el segmento de codigo que detectaba division, se anhadio un nuevo caso que mira si sigue un '/', y de ser asi consume los siguientes caracteres. Si en algun momento encuentra '\n' o '\0' lee el siguiente token de manera recursiva o emite un END respectivamente. El END es para evitar los casos en que el fin del programa esta dentro de un comentario.
+
+2) Para implementar constantes booleanas, se agrego codigo que emite push 1/0 dependiendo de si es true o false. Para las operaciones binarias se anhadieron dos casos para and y or que generan la instruccion apropiada. A continuacion la definicion de codegen usada para ForExpression: (note que la forma en que codegen esta implementado requiere una variable mas si queremos ser rigurosos con la notacion, sea esta variable "siguiente_direccion")
+
+sean siguiente_direccion' = siguiente_direccion + 1 y addr' = addr[id <- siguiente_direccion], luego
+codegen(addr,siguiente_direccion,ForExpression(id,e1,e2,body)) =
+     codegen(addr,e1)
+     store addr(id)
+     codegen(addr,e2)
+     check: skip 
+      dup
+      load addr(id)
+      ge
+      jmpz end 
+    codegen(addr',siguiente_direccion',body) 
+      load addr(id) 
+      push 1
+      add
+      store addr(id)
+      goto check 
+    end: skip
+      pop
+
+El codigo entre check y codegen(body) ejecuta la comparacion y el que sigue a codegen(body) incrementa la variable de iteracion. Estamos manteniendo a e2 en el stack, con lo que debemos liberarlo en el momento de salir del bucle para cumplir la invariante del stack. 
+Para booleanConstant y and/or codegen es como sigue:
+
+codegen(addr,boolConstant(const)) -> 
+    push 1 ifi const = true,
+    push 0 ifi const = false.
+
+codegen(addr,binaryExpression(e1,e2,op) ->
+        como previamente establecido si op no pertenece a {'and','or'},
+        
+        codegen(addr,e1) 
+        codegen(addr,e2)
+        and              ifi op = 'and',
+
+        codegen(addr,e1)
+        codegen(addr,e2)
+        or               ifi op = 'or'.
+
+3) 
+Para implementar esta sentencia, se hicieron los cambios apropiados en los visitors (clases abstractas y concretas). Ademas, en impParser se anhadio una nueva sentencia que comienza con "do" despues del codigo que maneja a los for-statements.
+Para el Do-While se incremento la gramatica de la siguiente forma:
+    Stm => ... | DoWhileStatement
+    DoWhileStatement => "do" Body "while" Exp
+
+   En terminos de tcheck, se uso la siguiente funcion:
+    tcheck(env,DoWhileStatement(cond,body)) ->
+        tcheck(body) && tcheck(cond) == bool
+
+   En terminos de codegen, se uso la siguiente funcion:
+    codegen(addr,DoWhileStatement(cond,body)) ->
+        start: skip
+        codegen(addr,body)
+        codegen(addr,cond)
+        jmpn start
+
+4) Se anhadieron las palabras reservadas 'break' y 'continue' con sus repectivos tokens al scanner. Ademas, se incremento la gramatica de la siguiente manera:
+    Stm := ... | LoopSkipStatement;
+    LoopSkipStatement :=> break | continue;
+
+Estamos implementando una version de continue/break que asocia al bucle mas interior. (Lease "si ud. tiene un bucle while, que contiene a un bucle for que contiene a un if que contiene a un break/continue, el break/continue afectara al bucle for.", que es aparentemente la implementacion que hace java: https://stackoverflow.com/questions/25800990/continue-inside-if-statement-inside-for-loop)
+
+Para determinar la correctitud del uso de estos statements, usaremos un tcheck modificado (realmente es mas como "analysis"). Esta funcion toma un parametro extra a los habituales, un contador 'count' de nesting de bucles (en el codigo, es un stack de statements que son bucles para tener las referencias a la mano pero el contador deberia ser suficiente). Note que esto implica actualizar las definiciones de tcheck para todos los elementos (ahora la funcion toma a count) y para los bucles en particular deben incrementarla antes de pasarsela a las invocaciones recursivas.
+
+type in {continue,break}
+tcheck(env,count,LoopSkipStatement(type)) ->
+    true ifi count != 0
+    false  caso contrario
+
+En el caso de codegen, utilizamos mas este stack de loops. El stack de bucles LStack guardara en nuestra definicion de codegen objetos que contienen las labels lcontinue y lbreak (con la forma de tuplas (c,b)) apropiadas para aplicar la operacion en el bucle correspondiente.
+
+Esto implica modificar las definiciones de todos los codegens para tomar un parametro mas 'LStack', que todos excepto los siguientes ignoran:
+
+sean siguiente_direccion' = siguiente_direccion + 1 y addr' = addr[id <- siguiente_direccion], luego
+codegen(addr,siguiente_direccion,ForExpression(id,e1,e2,body)) =
+    Sea LStack' el stack resultante de pushear a LStack (check,end).
+     codegen(addr,LStack,siguiente_direcion,e1)
+     store addr(id)
+     codegen(addr,LStack,siguiente_direcion,e2)
+     check: skip 
+      dup
+      load addr(id)
+      ge
+      jmpz end 
+    codegen(addr',LStack',siguiente_direccion',body) 
+      load addr(id) 
+      push 1
+      add
+      store addr(id)
+      goto check 
+    end: skip
+      pop
+codegen(addr,LStack,siguiente_direccion,WhileStatement(cond,body)) ->
+    Sea LStack' el stack resultante de pushear a LStack (LENTRY,LEND).
+    LENTRY: skip
+    codegen(addr,LStack',siguiente_direccion,cond) 
+    jmpz LEND 
+    codegen(addr,LStack',siguiente_direccion,body) 
+    goto LENTRY
+    LEND: skip
+
+codegen(addr,LStack,siguiente_direccion,DoWhileStatement(cond,body)) ->
+    Sea LStack' el stack resultante de pushear a LStack (continue,end).
+    start: skip
+    codegen(addr,LStack',siguiente_direccion,body)
+    continue: skip
+    codegen(addr,LStack',siguiente_direccion,cond)
+    jmpn start
+    end: skip
+
+Una ves definidos correctamente los bucles, sigue la definicion de codegen de LoopSkipStatement. Es sencilla.
+
+codegen(addr,LStack,siguiente_direccion,LoopSkipStatement(type)) ->
+    goto LStack.top.c* ifi type = 'continue'
+    goto LStack.top.b ifi type  = 'break'
+
+*(Recuerde que LStack guarda pares (c,b) donde c es el label al que saltar para un continue y b el apropiado para un break.)

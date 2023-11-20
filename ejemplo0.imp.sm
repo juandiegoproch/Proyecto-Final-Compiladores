@@ -1,0 +1,8 @@
+L0: skip
+push 1
+jmpz L1
+goto L0
+push  1
+print
+goto L0
+L1: skip
