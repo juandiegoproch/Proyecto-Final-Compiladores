@@ -131,6 +131,7 @@ int ImpCodeGen::visit(ForStatement* s) {
 
   // create and initialize iteration variable (x)
   direcciones.add_var(s->id,siguiente_direccion++);
+
   s->e1->accept(this); 
   codegen(nolabel,"store",direcciones.lookup(s->id)); 
 
@@ -179,10 +180,12 @@ int ImpCodeGen::visit(ForStatement* s) {
   codegen(lend,"skip");
   codegen(nolabel,"pop");
 
+
+
   direcciones.remove_level();
   siguiente_direccion = dir; // restaurar las direcciones
   loopStack.pop_back();
-
+  
   return 0;
 }
 
