@@ -185,7 +185,6 @@ int ImpCodeGen::visit(ForStatement* s) {
   direcciones.remove_level();
   siguiente_direccion = dir; // restaurar las direcciones
   loopStack.pop_back();
-  
   return 0;
 }
 
@@ -201,7 +200,7 @@ int ImpCodeGen::visit(DoWhileStatement* v)
   string lbreak = next_label();
   string lcontinue = next_label();
 
-  loopStack.push_back(LoopEntry(v,lcontinue,lbreak));
+  loopStack.push_back(LoopEntry(v,lcontinue,lbreak));  
 
   codegen(lstart,"skip");
   v->body->accept(this);
@@ -214,6 +213,10 @@ int ImpCodeGen::visit(DoWhileStatement* v)
 
   return 0;
 }
+
+
+
+  
 
 int ImpCodeGen::visit(LoopSkipStatement* v)
 {

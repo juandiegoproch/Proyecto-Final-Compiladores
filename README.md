@@ -11,6 +11,7 @@ La única modificación se añadió en *Scanner*:
 <p align="center">
     <img src="images/scanner_p1.png" height="">
 </p>
+
 - Modificamos la función nextToken, el caso en el que encuentra un ‘*’
 -	Lo primero que hacemos es leer el siguiente carácter y guardarlo en c
 -	Si c es igual a ‘/’, quiere decir que estamos frente a un comentario. 
@@ -27,6 +28,7 @@ La única modificación se añadió en *Scanner*:
 <p align="center">
     <img src="images/boolExp_p2.png" height="">
 </p>
+
 
 -	En la función visit(BoolConstExp* e), evaluamos el valor booleano de e (e->b)
 -	Si e almacena true, pusheamos 1 en la pila (sin label)
@@ -189,5 +191,87 @@ En términos de codegen, se usó la siguiente función:
 
         
 ## Implementación pregunta 4
+**Implementar las interpretaciones estándar de break y continue, las sentencias que permiten
+salir y terminar un loop o saltar a la condición de control del loop**
+
+### Modificaciones en Scanner
+Añadimos las palabras reservadas *'break'* y *'continue'* con sus repectivos tokens al scanner. 
+<p align="center">
+    <img src="images/BreakContinue1_p4.png" height="">
+</p>
+
+### Modificaciones en Parser
+<p align="center">
+    <img src="images/BreakContinue2_p4.png" height="">
+</p>
+Incrementamos la gramática de la siguiente manera:
+
+        Stm := ... | LoopSkipStatement;
+        LoopSkipStatement :=> break | continue;
+
+<p align="center">
+    <img src="images/BreakContinue3_p4.png" height="">
+</p>
+
+> Estamos implementando una version de continue/break que asocia al bucle más interior. (Lease "si ud. tiene un bucle while, que contiene a un bucle for que contiene a un if que contiene a un break/continue, el break/continue afectara al bucle for.", aparentemente, la misma implementación de Java: https://stackoverflow.com/questions/25800990/continue-inside-if-statement-inside-for-loop)
+
+- Para determinar la correctitud del uso de estos Stm's, usaremos un tcheck modificado (realmente es más como "analysis"): 
+    - Esta función toma un parametro extra a los habituales, un contador 'count' de nesting de bucles (en el codigo, es un stack de statements que son bucles para tener las referencias a la mano pero el contador deberia ser suficiente). 
+- Note que esto implica actualizar las definiciones de tcheck para todos los elementos (ahora la funcion toma a count) y para los bucles en particular deben incrementarla antes de pasarsela a las invocaciones recursivas.
+
+        type in {continue,break}
+        tcheck(env,count,LoopSkipStatement(type)) ->
+            true ifi count != 0
+            false  caso contrario
+
+En el caso de codegen, utilizamos mas este stack de loops. El stack de bucles LStack guardara en nuestra definicion de codegen objetos que contienen las labels lcontinue y lbreak (con la forma de tuplas (c,b)) apropiadas para aplicar la operacion en el bucle correspondiente.
+
+Esto implica modificar las definiciones de todos los codegens para tomar un parametro mas 'LStack', que todos excepto los siguientes ignoran:
+
+sean siguiente_direccion' = siguiente_direccion + 1 y addr' = addr[id <- siguiente_direccion], luego
+codegen(addr,siguiente_direccion,ForExpression(id,e1,e2,body)) =
+    Sea LStack' el stack resultante de pushear a LStack (check,end).
+     codegen(addr,LStack,siguiente_direcion,e1)
+     store addr(id)
+     codegen(addr,LStack,siguiente_direcion,e2)
+     check: skip 
+      dup
+      load addr(id)
+      ge
+      jmpz end 
+    codegen(addr',LStack',siguiente_direccion',body) 
+      load addr(id) 
+      push 1
+      add
+      store addr(id)
+      goto check 
+    end: skip
+      pop
+codegen(addr,LStack,siguiente_direccion,WhileStatement(cond,body)) ->
+    Sea LStack' el stack resultante de pushear a LStack (LENTRY,LEND).
+    LENTRY: skip
+    codegen(addr,LStack',siguiente_direccion,cond) 
+    jmpz LEND 
+    codegen(addr,LStack',siguiente_direccion,body) 
+    goto LENTRY
+    LEND: skip
+
+codegen(addr,LStack,siguiente_direccion,DoWhileStatement(cond,body)) ->
+    Sea LStack' el stack resultante de pushear a LStack (continue,end).
+    start: skip
+    codegen(addr,LStack',siguiente_direccion,body)
+    continue: skip
+    codegen(addr,LStack',siguiente_direccion,cond)
+    jmpn start
+    end: skip
+
+Una ves definidos correctamente los bucles, sigue la definicion de codegen de LoopSkipStatement. Es sencilla.
+
+codegen(addr,LStack,siguiente_direccion,LoopSkipStatement(type)) ->
+    goto LStack.top.c* ifi type = 'continue'
+    goto LStack.top.b ifi type  = 'break'
+
+*(Recuerde que LStack guarda pares (c,b) donde c es el label al que saltar para un continue y b el apropiado para un break.)
+
 
 
